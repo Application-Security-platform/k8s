@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mongodb-pv
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /data/mongodb # The path on the Minikube node where data will be stored
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mongodb-pvc
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongo-init
+data:
+  init.js: |
+    // Database: scanners
+    db = db.getSiblingDB('scanners');
+    db.createCollection('findings');
+    
+    // Database: other_db (example)
+    // db = db.getSiblingDB('other_db');
+    // db.createCollection('collection1');
+    // db.createCollection('collection2');
+    
+    // Add more databases and collections here following the same pattern
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mongodb-pod
+  labels:
+    app: mongodb
+spec:
+  containers:
+    - name: mongodb
+      image: mongo:latest
+      ports:
+        - containerPort: 27017
+      volumeMounts:
+        - name: mongodb-storage
+          mountPath: /data/db
+        - mountPath: /data/repos
+          name: repo-storage
+        - name: mongo-init
+          mountPath: /docker-entrypoint-initdb.d
+  volumes:
+    - name: mongodb-storage
+      persistentVolumeClaim:
+        claimName: mongodb-pvc
+    - name: repo-storage
+      persistentVolumeClaim:
+        claimName: repo-storage-pvc
+    - name: mongo-init
+      configMap:
+        name: mongo-init
+  restartPolicy: Always
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-service
+spec:
+  ports:
+    - port: 27017
+  selector:
+    app: mongodb
+  type: ClusterIP
